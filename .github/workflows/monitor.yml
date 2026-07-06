@@ -1,0 +1,64 @@
+name: Monitor Australia WHV 462 Caps
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Cada 30 minutos
+  workflow_dispatch:         # Permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # Necesario para guardar ultimo_valor.txt en el repo
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install requests beautifulsoup4
+
+      - name: Ejecutar monitor
+        id: monitor
+        run: python monitor.py
+
+      - name: Guardar nuevo valor en repo
+        if: steps.monitor.outputs.cambio_detectado == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ultimo_valor.txt
+          git commit -m "Update: nuevo valor detectado - ${{ steps.monitor.outputs.valor_nuevo }}"
+          git push
+
+      - name: Enviar email de aviso
+        if: steps.monitor.outputs.cambio_detectado == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          to: alexfuegomez@gmail.com
+          from: alexfuegomez@gmail.com
+          subject: "🇦🇺 CAMBIO DETECTADO — Australia WHV 462 caps"
+          body: |
+            ¡Se ha detectado un cambio en la página de caps de Australia!
+
+            Valor anterior: ${{ steps.monitor.outputs.valor_anterior }}
+            Valor nuevo:    ${{ steps.monitor.outputs.valor_nuevo }}
+
+            Entra ahora y verifica si España está OPEN:
+            https://immi.homeaffairs.gov.au/what-we-do/whm-program/status-of-country-caps
+
+            Si España aparece como OPEN, envía tu solicitud inmediatamente:
+            https://online.immi.gov.au/ola/app
+
+            ¡Suerte Alex! 🚀
