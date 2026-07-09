@@ -1,25 +1,40 @@
+"""
+Monitor WHV 462 - España
+Busca el estado de Spain en la tabla de caps.
+Si cambia de "paused" a cualquier otra cosa -> exit(1) -> GitHub Actions falla -> te manda email
+"""
+
 import requests
 import os
-from datetime import datetime
+import sys
 from bs4 import BeautifulSoup
 
 URL = "https://immi.homeaffairs.gov.au/what-we-do/whm-program/status-of-country-caps"
 ARCHIVO_ESTADO = "ultimo_valor.txt"
-VALOR_INICIAL = "3 July 2026"
+VALOR_INICIAL  = "paused"
 
-def obtener_valor_pagina():
+
+def obtener_estado_spain():
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         response = requests.get(URL, headers=headers, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
-        elemento = soup.find(id="pageModified")
-        if elemento:
-            return elemento.get_text(strip=True)
+
+        # Busca la fila que contiene "Spain"
+        for fila in soup.find_all("tr"):
+            celdas = fila.find_all("td")
+            if celdas and "Spain" in celdas[0].get_text():
+                # El estado está en el span label dentro de la segunda celda
+                span = celdas[1].find("span")
+                if span:
+                    return span.get_text(strip=True).replace("\u200b", "").strip()
         return None
+
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error al acceder a la página: {e}")
         return None
+
 
 def cargar_ultimo_valor():
     if os.path.exists(ARCHIVO_ESTADO):
@@ -27,36 +42,34 @@ def cargar_ultimo_valor():
             return f.read().strip()
     return VALOR_INICIAL
 
+
 def guardar_valor(valor):
     with open(ARCHIVO_ESTADO, "w") as f:
         f.write(valor)
 
+
 def main():
-    print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Comprobando...")
     ultimo_valor = cargar_ultimo_valor()
-    valor_actual = obtener_valor_pagina()
-    print(f"Guardado: '{ultimo_valor}'")
-    print(f"Web:      '{valor_actual}'")
-    github_output = os.environ.get("GITHUB_OUTPUT", "")
+    valor_actual = obtener_estado_spain()
+
+    print(f"Estado guardado: '{ultimo_valor}'")
+    print(f"Estado en web:   '{valor_actual}'")
+
     if valor_actual is None:
-        print("No se pudo obtener valor.")
-        if github_output:
-            with open(github_output, "a") as f:
-                f.write("cambio_detectado=false\n")
-        return
+        print("No se pudo obtener el estado de Spain. Reintenta en el próximo ciclo.")
+        sys.exit(0)  # No falla — puede ser error temporal de red
+
     if valor_actual != ultimo_valor:
-        print(f"CAMBIO: '{ultimo_valor}' → '{valor_actual}'")
+        # Guarda el nuevo valor
         guardar_valor(valor_actual)
-        if github_output:
-            with open(github_output, "a") as f:
-                f.write(f"cambio_detectado=true\n")
-                f.write(f"valor_anterior={ultimo_valor}\n")
-                f.write(f"valor_nuevo={valor_actual}\n")
+        # Falla con exit(1) -> GitHub te manda email automáticamente
+        print(f"CAMBIO DETECTADO: '{ultimo_valor}' → '{valor_actual}'")
+        print("Entra en ImmiAccount: https://online.immi.gov.au/ola/app")
+        sys.exit(1)
     else:
-        print(f"Sin cambios: '{valor_actual}'")
-        if github_output:
-            with open(github_output, "a") as f:
-                f.write("cambio_detectado=false\n")
+        print(f"Sin cambios. Spain sigue: '{valor_actual}'")
+        sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
